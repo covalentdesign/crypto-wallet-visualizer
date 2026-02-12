@@ -3,7 +3,8 @@ import type { Planet, Ship } from '../types';
 export function createShips(
   planets: Planet[],
   centerX: number,
-  centerY: number
+  centerY: number,
+  timelineRange?: { start: number; end: number }
 ): Ship[] {
   const ships: Ship[] = [];
 
@@ -11,6 +12,16 @@ export function createShips(
     // Create ships based on transaction direction and count
     const outboundCount = Math.min(planet.interaction.sentCount, 3);
     const inboundCount = Math.min(planet.interaction.receivedCount, 3);
+
+    // Calculate when this planet's ships should activate on the timeline
+    let activationTime = 0;
+    if (timelineRange) {
+      const firstDate = new Date(planet.interaction.firstInteraction).getTime();
+      const range = timelineRange.end - timelineRange.start;
+      if (range > 0) {
+        activationTime = Math.max(0, Math.min(1, (firstDate - timelineRange.start) / range));
+      }
+    }
 
     for (let i = 0; i < outboundCount; i++) {
       ships.push({
@@ -24,6 +35,7 @@ export function createShips(
         trail: [],
         direction: 'outbound',
         chain: planet.interaction.primaryChain,
+        activationTime,
       });
     }
 
@@ -39,6 +51,7 @@ export function createShips(
         trail: [],
         direction: 'inbound',
         chain: planet.interaction.primaryChain,
+        activationTime,
       });
     }
   }
@@ -153,10 +166,13 @@ function reassociateShips(
   }
 }
 
-export function drawShips(ctx: CanvasRenderingContext2D, ships: Ship[], disabledChains?: Set<string>, trailsEnabled: boolean = true) {
+export function drawShips(ctx: CanvasRenderingContext2D, ships: Ship[], disabledChains?: Set<string>, trailsEnabled: boolean = true, timelineProgress?: number) {
   for (const ship of ships) {
     const disabled = disabledChains?.has(ship.chain) ?? false;
     if (disabled) continue;
+
+    // Hide ships whose interaction hasn't occurred yet on the timeline
+    if (timelineProgress !== undefined && timelineProgress < ship.activationTime) continue;
 
     // Draw trail (only when enabled)
     if (trailsEnabled) {

@@ -53,6 +53,7 @@ export interface Ship {
   trail: { x: number; y: number; alpha: number }[];
   direction: 'outbound' | 'inbound';
   chain: string;
+  activationTime: number; // 0-1 position on timeline when this ship becomes active
 }
 
 export interface Camera {

@@ -13,18 +13,6 @@ html, body, #root {
   color: #c8dcff;
 }
 
-/* Galaxy background image — lowest layer */
-.galaxy-bg {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: -1;
-  background: url('/galaxy-bg.jpg') center center / cover no-repeat;
-  opacity: 0.2;
-}
-
 /* Canvas fills the whole screen */
 canvas {
   position: fixed;
@@ -77,7 +65,6 @@ canvas {
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
   letter-spacing: 0.5px;
-  text-transform: uppercase;
   outline: none;
   transition: all 0.3s ease;
 }
@@ -134,7 +121,7 @@ canvas {
 /* HUD */
 .hud {
   position: absolute;
-  bottom: 32px;
+  bottom: 84px;
   left: 32px;
 }
 
@@ -383,7 +370,7 @@ canvas {
 /* Status indicator */
 .status-bar {
   position: absolute;
-  bottom: 32px;
+  bottom: 84px;
   right: 32px;
   display: flex;
   flex-direction: column;
@@ -418,7 +405,7 @@ canvas {
 /* Bottom toggles (trails + music) */
 .bottom-toggles {
   position: absolute;
-  bottom: 40px;
+  bottom: 92px;
   right: 32px;
   display: flex;
   align-items: center;
@@ -546,4 +533,171 @@ canvas {
   display: flex;
   align-items: center;
   text-transform: uppercase;
+}
+
+/* ─── Transaction Timeline ─── */
+
+.transaction-timeline {
+  position: absolute;
+  bottom: 18px;
+  left: 40px;
+  right: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  animation: timelineFadeIn 1s ease-out;
+}
+
+@keyframes timelineFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.timeline-label {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(120, 180, 230, 0.55);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.timeline-label-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-sun-icon {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #FFE88A, #FFB844);
+  box-shadow: 0 0 6px rgba(255, 180, 60, 0.6);
+  animation: sunIconPulse 2s ease-in-out infinite;
+}
+
+@keyframes sunIconPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 180, 60, 0.4); }
+  50%      { box-shadow: 0 0 10px rgba(255, 180, 60, 0.8); }
+}
+
+.timeline-track {
+  flex: 1;
+  position: relative;
+  height: 28px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+/* Dense background hash marks — barcode effect */
+.timeline-hashmarks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 4px;
+  bottom: 4px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(60, 140, 220, 0.08) 0px,
+    rgba(60, 140, 220, 0.08) 1px,
+    transparent 1px,
+    transparent 5px
+  );
+  mask-image: linear-gradient(to right, transparent, white 1%, white 99%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, white 1%, white 99%, transparent);
+}
+
+/* Thin center line */
+.timeline-center-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: rgba(60, 130, 200, 0.2);
+}
+
+/* Individual transaction tick marks */
+.timeline-tick {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  border-radius: 1px;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.3s;
+}
+
+/* Glow area that follows the sun */
+.timeline-glow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0%;
+  width: 100px;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 180, 60, 0.08),
+    transparent 70%
+  );
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* Animated sun orb */
+.timeline-sun {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #FFE88A, #FFB844, #FF8800);
+  box-shadow:
+    0 0 8px rgba(255, 180, 60, 0.9),
+    0 0 20px rgba(255, 140, 0, 0.4),
+    0 0 40px rgba(255, 100, 0, 0.12);
+  top: 50%;
+  left: 0%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+/* Trailing glow behind sun — direction flips when dragging backwards */
+.timeline-sun::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  left: auto;
+  width: 50px;
+  height: 2px;
+  transform: translateY(-50%);
+  background: linear-gradient(to left, rgba(255, 180, 60, 0.5), transparent);
+  pointer-events: none;
+  transition: none;
+}
+
+.timeline-sun.reverse::before {
+  right: auto;
+  left: 100%;
+  background: linear-gradient(to right, rgba(255, 180, 60, 0.5), transparent);
+}
+
+/* Pulsing corona */
+.timeline-sun::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 180, 60, 0.25), transparent 70%);
+  animation: sunCorona 2.5s ease-in-out infinite;
+}
+
+@keyframes sunCorona {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50%      { transform: scale(1.8); opacity: 1; }
 }

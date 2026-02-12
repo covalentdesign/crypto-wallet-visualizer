@@ -3,6 +3,24 @@ import type { Transaction, WalletInteraction } from '../types';
 const API_KEY = import.meta.env.VITE_GOLDRUSH_API_KEY;
 const BASE_URL = 'https://api.covalenthq.com/v1';
 
+/**
+ * Resolve an ENS name (or other named address) to a hex address via Covalent.
+ * If the input is already a hex address, returns it as-is.
+ */
+export async function resolveAddress(input: string): Promise<string> {
+  if (input.startsWith('0x')) return input;
+
+  const url = `${BASE_URL}/eth-mainnet/address/${encodeURIComponent(input)}/balances_v2/?no-spam=true&no-nft-fetch=true`;
+  const response = await fetch(url, {
+    headers: { 'Authorization': `Bearer ${API_KEY}` },
+  });
+  if (!response.ok) throw new Error('Could not resolve ENS name');
+  const data = await response.json();
+  const resolved = data?.data?.address;
+  if (!resolved) throw new Error('Could not resolve ENS name');
+  return resolved;
+}
+
 const CHAINS = [
   'eth-mainnet',
   'bsc-mainnet',

@@ -48,6 +48,9 @@ export interface RendererState {
   loading: boolean;
   // Trails toggle
   trailsEnabled: boolean;
+  // Timeline sync
+  timelineRange: { start: number; end: number } | null;
+  timelineProgress: number | undefined;
 }
 
 export function createRenderer(canvas: HTMLCanvasElement): RendererState {
@@ -74,9 +77,8 @@ export function createRenderer(canvas: HTMLCanvasElement): RendererState {
     ctx = canvas.getContext('2d')!;
   }
 
-  // Load galaxy background
   const bgImage = new Image();
-  bgImage.src = '/galaxy-bg.jpg';
+  bgImage.src = '/space.jpg';
 
   const state: RendererState = {
     canvas,
@@ -111,6 +113,8 @@ export function createRenderer(canvas: HTMLCanvasElement): RendererState {
     disabledChains: new Set(),
     loading: false,
     trailsEnabled: true,
+    timelineRange: null,
+    timelineProgress: undefined,
   };
 
   bgImage.onload = () => { state.bgLoaded = true; };
@@ -148,6 +152,7 @@ export function updateSize(state: RendererState) {
       state.postProcessor = createPostProcessor(gl, pw, ph);
     }
   }
+
 }
 
 export function setInteractions(
@@ -155,7 +160,7 @@ export function setInteractions(
   interactions: WalletInteraction[]
 ) {
   state.planets = createPlanets(interactions, state.centerX, state.centerY, state.width, state.height);
-  state.ships = createShips(state.planets, state.centerX, state.centerY);
+  state.ships = createShips(state.planets, state.centerX, state.centerY, state.timelineRange ?? undefined);
 }
 
 /** Convert screen coords to world coords for hit testing */
@@ -226,25 +231,27 @@ export function startRenderLoop(
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, width, height);
 
-    // Draw galaxy background at 20% opacity
+    // Draw space background with slight parallax
     if (state.bgLoaded && state.bgImage) {
       ctx.globalAlpha = 0.2;
       const img = state.bgImage;
-      // Cover the canvas maintaining aspect ratio
       const imgRatio = img.width / img.height;
       const canvasRatio = width / height;
-      let drawW: number, drawH: number, drawX: number, drawY: number;
+      // Cover the canvas maintaining aspect ratio, slightly oversized for parallax room
+      const oversize = 1.15;
+      let drawW: number, drawH: number;
       if (canvasRatio > imgRatio) {
-        drawW = width;
-        drawH = width / imgRatio;
-        drawX = 0;
-        drawY = (height - drawH) / 2;
+        drawW = width * oversize;
+        drawH = drawW / imgRatio;
       } else {
-        drawH = height;
-        drawW = height * imgRatio;
-        drawX = (width - drawW) / 2;
-        drawY = 0;
+        drawH = height * oversize;
+        drawW = drawH * imgRatio;
       }
+      // Offset by dampened camera rotation for subtle parallax
+      const px = -state.rotationY * 15;
+      const py = -state.tiltX * 15;
+      const drawX = (width - drawW) / 2 + px;
+      const drawY = (height - drawH) / 2 + py;
       ctx.drawImage(img, drawX, drawY, drawW, drawH);
       ctx.globalAlpha = 1;
     }
@@ -273,7 +280,7 @@ export function startRenderLoop(
     drawPlanets(ctx, state.planets, state.time, centerX, centerY, camera, state.disabledChains);
 
     updateShips(state.ships, state.planets, centerX, centerY, state.trailsEnabled);
-    drawShips(ctx, state.ships, state.disabledChains, state.trailsEnabled);
+    drawShips(ctx, state.ships, state.disabledChains, state.trailsEnabled, state.timelineProgress);
 
     ctx.restore();
 

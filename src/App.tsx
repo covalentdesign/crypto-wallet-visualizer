@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createRenderer,
   updateSize,
@@ -8,11 +8,12 @@ import {
   setupInteraction,
   type RendererState,
 } from './canvas/renderer';
-import { fetchTransactions, fetchFirstActivity, fetchWalletBalance, buildInteractions } from './api/goldrush';
+import { fetchTransactions, fetchFirstActivity, fetchWalletBalance, buildInteractions, resolveAddress } from './api/goldrush';
 import type { Planet, WalletInteraction } from './types';
 import './styles/global.css';
 
 function truncateAddress(addr: string): string {
+  if (addr.includes('.')) return addr;
   return addr.slice(0, 6) + '...' + addr.slice(-4);
 }
 
@@ -47,6 +48,24 @@ export default function App() {
   const [trailsEnabled, setTrailsEnabled] = useState(true);
   const [trackIndex, setTrackIndex] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const timelineSunRef = useRef<HTMLDivElement>(null);
+  const timelineGlowRef = useRef<HTMLDivElement>(null);
+  const timelineTrackRef = useRef<HTMLDivElement>(null);
+  const timelineProgressRef = useRef(0);
+  const timelineDraggingRef = useRef(false);
+  const timelineDirectionRef = useRef<'forward' | 'reverse'>('forward');
+  const timelineAnimIdRef = useRef<number | null>(null);
+
+  // Derive timeline start from the earliest interaction (not the wallet's first-ever tx)
+  const timelineStartDate = useMemo(() => {
+    if (interactions.length === 0) return null;
+    let earliest = Infinity;
+    for (const i of interactions) {
+      const t = new Date(i.firstInteraction).getTime();
+      if (t < earliest) earliest = t;
+    }
+    return earliest === Infinity ? null : new Date(earliest).toISOString();
+  }, [interactions]);
 
   const handleHover = useCallback((planet: Planet | null) => {
     setHoveredPlanet(planet);
@@ -95,9 +114,67 @@ export default function App() {
   useEffect(() => {
     const state = rendererRef.current;
     if (state && interactions.length > 0) {
+      if (timelineStartDate) {
+        state.timelineRange = {
+          start: new Date(timelineStartDate).getTime(),
+          end: Date.now(),
+        };
+      }
       setInteractions(state, interactions);
     }
-  }, [interactions]);
+  }, [interactions, timelineStartDate]);
+
+  // RAF-based timeline animation loop (auto-play + drag)
+  useEffect(() => {
+    if (!timelineStartDate || interactions.length === 0) return;
+
+    let lastTime = performance.now();
+    const CYCLE_MS = 20000; // 20s full cycle
+
+    function tick() {
+      const now = performance.now();
+      const dt = now - lastTime;
+      lastTime = now;
+
+      // Only advance when not dragging
+      if (!timelineDraggingRef.current) {
+        timelineProgressRef.current += dt / CYCLE_MS;
+        if (timelineProgressRef.current > 1) timelineProgressRef.current -= 1;
+        timelineDirectionRef.current = 'forward';
+      }
+
+      const pct = timelineProgressRef.current * 100;
+
+      // Position sun and glow via direct DOM mutation (no React re-render)
+      const sun = timelineSunRef.current;
+      const glow = timelineGlowRef.current;
+      if (sun) sun.style.left = pct + '%';
+      if (glow) glow.style.left = pct + '%';
+
+      // Toggle trail direction class
+      if (sun) {
+        if (timelineDirectionRef.current === 'reverse') {
+          sun.classList.add('reverse');
+        } else {
+          sun.classList.remove('reverse');
+        }
+      }
+
+      // Push progress to canvas renderer for ship sync
+      const state = rendererRef.current;
+      if (state) state.timelineProgress = timelineProgressRef.current;
+
+      timelineAnimIdRef.current = requestAnimationFrame(tick);
+    }
+
+    timelineAnimIdRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (timelineAnimIdRef.current !== null) {
+        cancelAnimationFrame(timelineAnimIdRef.current);
+      }
+    };
+  }, [timelineStartDate, interactions.length]);
 
   // Sync disabled chains to renderer
   useEffect(() => {
@@ -177,18 +254,50 @@ export default function App() {
     return () => { cancelled = true; };
   }, [selectedPlanet]);
 
+  // Timeline drag handlers
+  const handleTimelinePointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    timelineDraggingRef.current = true;
+    const track = timelineTrackRef.current;
+    if (track) {
+      const rect = track.getBoundingClientRect();
+      timelineProgressRef.current = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    }
+  }, []);
+
+  const handleTimelinePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!timelineDraggingRef.current) return;
+    const track = timelineTrackRef.current;
+    if (!track) return;
+    const rect = track.getBoundingClientRect();
+    const prev = timelineProgressRef.current;
+    const next = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    timelineDirectionRef.current = next < prev ? 'reverse' : 'forward';
+    timelineProgressRef.current = next;
+  }, []);
+
+  const handleTimelinePointerUp = useCallback(() => {
+    timelineDraggingRef.current = false;
+    timelineDirectionRef.current = 'forward';
+  }, []);
+
   const handleSubmit = async () => {
-    const address = walletInput.trim();
-    if (!address) return;
+    const input = walletInput.trim();
+    if (!input) return;
 
     setLoading(true);
     setError(null);
     setInteractionsState([]);
-    setActiveWallet(address);
+    setActiveWallet(input);
     setFirstActivity(null);
     setWalletBalance(null);
 
     try {
+      // Resolve ENS names to hex addresses
+      const address = await resolveAddress(input);
+      setActiveWallet(input.includes('.') ? input : address);
+
       const [txs, firstDate, balance] = await Promise.all([
         fetchTransactions(address),
         fetchFirstActivity(address),
@@ -239,6 +348,56 @@ export default function App() {
   };
   const defaultColor = '#4ECDC4';
 
+  // Compute timeline tick positions from interaction dates
+  const timelineTicks = useMemo(() => {
+    if (!timelineStartDate || interactions.length === 0) return null;
+
+    const startDate = new Date(timelineStartDate).getTime();
+    const endDate = Date.now();
+    const range = endDate - startDate;
+    if (range <= 0) return null;
+
+    const maxTx = Math.max(...interactions.map((i) => i.txCount));
+    const ticks: { pos: number; color: string; height: number }[] = [];
+
+    for (const interaction of interactions) {
+      const firstTime = new Date(interaction.firstInteraction).getTime();
+      const lastTime = new Date(interaction.lastInteraction).getTime();
+      const color = CHAIN_LEGEND_COLORS[interaction.primaryChain] ?? defaultColor;
+      const heightPct = 0.35 + 0.65 * (interaction.txCount / maxTx);
+
+      ticks.push({
+        pos: Math.max(0, Math.min(1, (firstTime - startDate) / range)),
+        color,
+        height: heightPct,
+      });
+
+      if (Math.abs(firstTime - lastTime) > 86400000) {
+        ticks.push({
+          pos: Math.max(0, Math.min(1, (lastTime - startDate) / range)),
+          color,
+          height: heightPct * 0.8,
+        });
+
+        // Add intermediate ticks for sustained activity
+        const span = lastTime - firstTime;
+        if (span > 86400000 * 14) {
+          const steps = Math.min(4, Math.floor(span / (86400000 * 30)));
+          for (let j = 1; j <= steps; j++) {
+            const t = firstTime + (span * j) / (steps + 1);
+            ticks.push({
+              pos: Math.max(0, Math.min(1, (t - startDate) / range)),
+              color,
+              height: heightPct * 0.5,
+            });
+          }
+        }
+      }
+    }
+
+    return ticks;
+  }, [timelineStartDate, interactions]);
+
   return (
     <>
       <canvas ref={canvasRef} />
@@ -257,7 +416,7 @@ export default function App() {
             <input
               className="wallet-input"
               type="text"
-              placeholder="0x..."
+              placeholder="0x... or name.eth"
               value={walletInput}
               onChange={(e) => setWalletInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
@@ -526,6 +685,42 @@ export default function App() {
             </svg>
           </div>
         </div>
+
+        {/* Transaction Timeline */}
+        {timelineStartDate && interactions.length > 0 && timelineTicks && (
+          <div className="transaction-timeline">
+            <span className="timeline-label">{formatDate(timelineStartDate)}</span>
+            <div
+              className="timeline-track"
+              ref={timelineTrackRef}
+              onPointerDown={handleTimelinePointerDown}
+              onPointerMove={handleTimelinePointerMove}
+              onPointerUp={handleTimelinePointerUp}
+              onPointerCancel={handleTimelinePointerUp}
+            >
+              <div className="timeline-hashmarks" />
+              <div className="timeline-center-line" />
+              {timelineTicks.map((tick, i) => (
+                <div
+                  key={i}
+                  className="timeline-tick"
+                  style={{
+                    left: `${tick.pos * 100}%`,
+                    height: `${tick.height * 100}%`,
+                    background: tick.color,
+                    boxShadow: `0 0 6px ${tick.color}55`,
+                  }}
+                />
+              ))}
+              <div className="timeline-glow" ref={timelineGlowRef} />
+              <div className="timeline-sun" ref={timelineSunRef} />
+            </div>
+            <span className="timeline-label timeline-label-end">
+              <span className="timeline-sun-icon" />
+              Today
+            </span>
+          </div>
+        )}
 
         {/* Status bar */}
         <div className="status-bar">
