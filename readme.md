@@ -2,7 +2,7 @@
 
 An interactive 3D visualization tool that transforms blockchain wallet activity into a beautiful solar system interface. Built with Claude Code and powered by the GoldRush API.
 
-[Solar Wallet Visualizer]
+Solar Wallet Visualizer
 <img width="1456" height="815" alt="image" src="https://github.com/user-attachments/assets/72f55157-59f2-4558-b2c2-879343063692" />
 
 ## Overview
@@ -140,5 +140,6 @@ Project Link: [https://github.com/yourusername/solar-wallet-visualizer](https://
 ⭐ If you find this project interesting, please consider giving it a star!
 
 Built with ❤️ and Claude Code + GoldRush API
+
 
 
